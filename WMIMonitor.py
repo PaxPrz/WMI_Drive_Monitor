@@ -38,14 +38,8 @@ def get_removable_disks(d: Union[wmi._wmi_namespace, List[wmi._wmi_object]])-> L
     removable_disks = []
     if not isinstance(d, (list, tuple, set)):
         try:
-            d = d.Win32_LogicalDisk()
+            removable_disks = d.Win32_LogicalDisk(DriveType="2")
         except:
-            d = []
-    for drive in d:
-        try:
-            if drive.DriveType == 2:
-                removable_disks.append(drive)
-        except AttributeError:
             logging.error(f"DriveType cannot be fetched for {self.drive_letter}")
     return removable_disks
 
