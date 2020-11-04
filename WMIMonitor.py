@@ -113,7 +113,7 @@ class Drive:
         return FileSystem
     
 class LogicalDiskWatcher:
-    def __init__(self, mode: str, only_removable:bool=True, timeout_in_ms:int=1000)-> "LogicalDiskWatcher":
+    def __init__(self, mode: str, only_removable:bool=True, timeout_in_ms:int=100)-> "LogicalDiskWatcher":
         self._mode = mode
         self._destruct = False
         self._timeout = timeout_in_ms
@@ -139,7 +139,7 @@ class LogicalDiskWatcher:
                 except KeyboardInterrupt:
                     self.destroy()
                 except wmi.x_wmi_timed_out:
-                    continue
+                    yield
                 except Exception as e:
                     logging.error(f"Exception coming from here\n {e}")
                     self.destroy()
@@ -150,6 +150,7 @@ class LogicalDiskWatcher:
                     if self._only_removable and not drive_type == 2:
                         continue
                     self._show_notification(response)
+                    #yield
         finally:
             if not current_thread() is main_thread():
                 pythoncom.CoUninitialize()
@@ -217,21 +218,12 @@ if __name__=="__main__":
         Press 'q' to Quit!
     ''')
     workers = LogicalDiskCreation(), LogicalDiskEjection(), LogicalDiskModification()#, LogicalDiskOperation()
-    threads = []
-    for w in workers:
-        t = Thread(target=w.start_watching)
-        t.start()
-        threads.append(t)
+    gens = [x.start_watching() for x in workers]
     while True:
         try:
-            q = input("")
-        except KeyboardInterrupt:
-            q = 'q'
-        if q in ('q','Q'):
-            for w in workers:
-                w.destroy()
+            for w in gens:
+                next(w)
+        except (KeyboardInterrupt, StopIteration):
             break
-    for t in threads:
-        t.join()
     logging.debug('''Closing Watcher''')
     
