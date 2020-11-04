@@ -2,10 +2,8 @@ import wmi
 from typing import List, Any, Union
 import logging
 from contextlib import suppress
-from threading import Thread, current_thread, main_thread
 import sys
 import time
-import pythoncom
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
         
@@ -129,32 +127,26 @@ class LogicalDiskWatcher:
         self.disk_watcher = self._my_c.Win32_LogicalDisk.watch_for(self._mode, **self._kword)
         
     def start_watching(self):
-        if not current_thread() is main_thread():
-            pythoncom.CoInitialize()
-        try:
-            self._create_watcher()
-            while not self._destruct:
-                try:
-                    response = self.disk_watcher(timeout_ms=self._timeout)
-                except KeyboardInterrupt:
-                    self.destroy()
-                except wmi.x_wmi_timed_out:
-                    yield
-                except Exception as e:
-                    logging.error(f"Exception coming from here\n {e}")
-                    self.destroy()
-                else:
-                    drive_type = -1
-                    with suppress(AttributeError):
-                        drive_type = int(response.DriveType)
-                    if self._only_removable and not drive_type == 2:
-                        continue
-                    self._show_notification(response)
-                    #yield
-        finally:
-            if not current_thread() is main_thread():
-                pythoncom.CoUninitialize()
-    
+        self._create_watcher()
+        while not self._destruct:
+            try:
+                response = self.disk_watcher(timeout_ms=self._timeout)
+            except KeyboardInterrupt:
+                self.destroy()
+            except wmi.x_wmi_timed_out:
+                yield
+            except Exception as e:
+                logging.error(f"Exception coming from here\n {e}")
+                self.destroy()
+            else:
+                drive_type = -1
+                with suppress(AttributeError):
+                    drive_type = int(response.DriveType)
+                if self._only_removable and not drive_type == 2:
+                    continue
+                self._show_notification(response)
+                #yield
+                
     def destroy(self):
         self._destruct = True
     
