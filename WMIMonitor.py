@@ -2,7 +2,7 @@ import wmi
 from typing import List, Any, Union
 import logging
 from contextlib import suppress
-from threading import Thread
+from threading import Thread, current_thread, main_thread
 import sys
 import time
 import pythoncom
@@ -14,7 +14,7 @@ def convert_bytes(size):
         size = float(size)
     for x in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size < 1024.0:
-            return "%3.1f %s" % (size, x)
+            return "%3.2f %s" % (size, x)
         size /= 1024.0
     return str(size)
 
@@ -27,8 +27,6 @@ DRIVE_TYPE = {
 
 def get_WMI_consumer()-> wmi._wmi_namespace:
     return wmi.WMI()
-
-wmi_consumer = get_WMI_consumer()
 
 def get_logical_disks(c: wmi._wmi_namespace)-> List[wmi._wmi_object]:
     try:
@@ -120,45 +118,48 @@ class Drive:
             return None
         return FileSystem
     
-class LogicalDiskWatcher(Thread):
-    def __init__(self, mode: str, timeout_in_ms=1000)-> "LogicalDiskWatcher":
+class LogicalDiskWatcher:
+    def __init__(self, mode: str, only_removable:bool=True, timeout_in_ms:int=1000)-> "LogicalDiskWatcher":
         Thread.__init__(self)
-        self._my_c = wmi.WMI()
         self._mode = mode
         self._destruct = False
         self._timeout = timeout_in_ms
         self._all_disks = []
-        self._only_removable = True
-        logging.info(f"Created {self._mode}")
+        self._only_removable = only_removable
+        self._kword={}
+        if self._only_removable:
+            self._kword.update({"DriveType":"2"})
+        #logging.info(f"Created {self._mode}")
         
     def _create_watcher(self):
-        self.disk_watcher = self._my_c.Win32_LogicalDisk.watch_for(self._mode)
+        self._my_c = get_WMI_consumer()
+        self.disk_watcher = self._my_c.Win32_LogicalDisk.watch_for(self._mode, **self._kword)
         
     def start_watching(self):
-        while True:
-            try:
-                response = self.disk_watcher(timeout_ms=self._timeout)
-            except KeyboardInterrupt:
-                self._destruct = True
-                break
-            except wmi.x_wmi_timed_out:
-                if self._destruct:
-                    break
-                #print('sleep')
-                #time.sleep(10) #to be removed
-                #print('wakeup')
-                continue
-            except Exception as e:
-                logging.error(f"Exception coming from here\n {e}")
-                sys.exit(-1)
-                continue
-            else:
-                drive_type = -1
-                with suppress(AttributeError):
-                    drive_type = int(response.DriveType)
-                if self._only_removable and not drive_type == 2:
+        if not current_thread() is main_thread():
+            pythoncom.CoInitialize()
+        try:
+            self._create_watcher()
+            while not self._destruct:
+                try:
+                    response = self.disk_watcher(timeout_ms=self._timeout)
+                except KeyboardInterrupt:
+                    self.destroy()
+                except wmi.x_wmi_timed_out:
                     continue
-                self._show_notification(response)
+                except Exception as e:
+                    logging.error(f"Exception coming from here\n {e}")
+                    self.destroy()
+                else:
+                    drive_type = -1
+                    with suppress(AttributeError):
+                        drive_type = int(response.DriveType)
+                    if self._only_removable and not drive_type == 2:
+                        continue
+                    self._show_notification(response)
+        finally:
+            if not current_thread() is main_thread():
+                pythoncom.CoUninitialize()
     
     def destroy(self):
         self._destruct = True
@@ -168,17 +169,12 @@ class LogicalDiskWatcher(Thread):
     
     def run(self):
         logging.info(f'''Starting {self.__class__.__name__}''')
-        #pythoncom.CoInitialize()
-        self._create_watcher()
         self.start_watching()
-        #pythoncom.CoUninitialize()
         
     
 class LogicalDiskCreation(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
-        super().__init__(mode="creation")
-        self._only_removable = only_removable
-        #self._create_watcher()
+        super().__init__(mode="creation", only_removable=only_removable)
     
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''New Disk Inserted
@@ -193,22 +189,24 @@ class LogicalDiskCreation(LogicalDiskWatcher):
     
 class LogicalDiskModification(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
-        super().__init__(mode="modification")
-        self._only_removable = only_removable
-        self._create_watcher()
+        super().__init__(mode="modification", only_removable=only_removable)
         
     def _show_notification(self, response: wmi._wmi_event):
+        volume_changed = int(response.previous.FreeSpace) - int(response.FreeSpace)
+        text = "File Size Added"
+        if volume_changed < 0:
+            text = "File Size Freed"
+            volume_changed = -volume_changed
         logging.info(f'''Drive Modified
             Drive Letter: {response.Caption}
             Volume Name: {response.VolumeName}
-        
+            {text}: {convert_bytes(volume_changed)}
         ''')
         
 class LogicalDiskEjection(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
-        super().__init__(mode="deletion")
-        self._only_removable = only_removable
-        self._create_watcher()
+        super().__init__(mode="deletion", only_removable=only_removable)
+        
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''Drive Ejected
             Drive Letter: {response.Caption}
@@ -217,9 +215,7 @@ class LogicalDiskEjection(LogicalDiskWatcher):
         
 class LogicalDiskOperation(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
-        super().__init__(mode="operation")
-        self._only_removable = True
-        self._create_watcher()
+        super().__init__(mode="operation", only_removable=only_removable)
         
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''Drive Operation
@@ -231,21 +227,22 @@ if __name__=="__main__":
     logging.debug('''Starting up watcher
         Press 'q' to Quit!
     ''')
-    #e = LogicalDiskEjection()
-    #e.start_watching()
-    #sys.exit()
-    workers = (LogicalDiskCreation(),)# LogicalDiskEjection()#, LogicalDiskModification()#, LogicalDiskOperation()
+    workers = LogicalDiskCreation(), LogicalDiskEjection(), LogicalDiskModification()#, LogicalDiskOperation()
+    threads = []
     for w in workers:
-    #    t = Thread(target=w.start_watching)
-        w.start()
-    #    threads.append(t)
+        t = Thread(target=w.start_watching)
+        t.start()
+        threads.append(t)
     while True:
-        q = input("")
+        try:
+            q = input("")
+        except KeyboardInterrupt:
+            q = 'q'
         if q in ('q','Q'):
             for w in workers:
                 w.destroy()
             break
-    for t in workers:
+    for t in threads:
         t.join()
     logging.debug('''Closing Watcher''')
     
