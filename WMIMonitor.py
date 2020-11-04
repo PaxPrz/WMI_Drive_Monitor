@@ -119,9 +119,8 @@ class Drive:
             return None
         return FileSystem
     
-class LogicalDiskWatcher(Thread):
+class LogicalDiskWatcher:
     def __init__(self, mode: str, timeout_in_ms=1000)-> "LogicalDiskWatcher":
-        Thread.__init__(self)
         self._mode = mode
         self._destruct = False
         self._timeout = timeout_in_ms
@@ -129,8 +128,8 @@ class LogicalDiskWatcher(Thread):
         self._only_removable = True
         logging.info(f"Created {self._mode}")
         
-    def _create_watcher(self):
-        self.disk_watcher = wmi_consumer.Win32_LogicalDisk.watch_for(self._mode)
+    def _create_watcher(self, **kwargs):
+        self.disk_watcher = wmi_consumer.Win32_LogicalDisk.watch_for(self._mode, **kwargs)
         
     def start_watching(self):
         while True:
@@ -163,17 +162,16 @@ class LogicalDiskWatcher(Thread):
     
     def _show_notification(self, response: wmi._wmi_event):
         pass
-    
-    def run(self):
-        logging.info(f'''Starting {self.__class__.__name__}''')
-        self.start_watching()
         
     
 class LogicalDiskCreation(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
         super().__init__(mode="creation")
         self._only_removable = only_removable
-        self._create_watcher()
+        kwords={}
+        if self._only_removable:
+            kwords.update({"DriveType":"2"})
+        self._create_watcher(**kwords)
     
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''New Disk Inserted
@@ -190,7 +188,10 @@ class LogicalDiskModification(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
         super().__init__(mode="modification")
         self._only_removable = only_removable
-        self._create_watcher()
+        kwords={}
+        if self._only_removable:
+            kwords.update({"DriveType":"2"})
+        self._create_watcher(**kwords)
         
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''Drive Modified
@@ -203,7 +204,11 @@ class LogicalDiskEjection(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
         super().__init__(mode="deletion")
         self._only_removable = only_removable
-        self._create_watcher()
+        kwords={}
+        if self._only_removable:
+            kwords.update({"DriveType":"2"})
+        self._create_watcher(**kwords)
+        
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''Drive Ejected
             Drive Letter: {response.Caption}
@@ -213,8 +218,11 @@ class LogicalDiskEjection(LogicalDiskWatcher):
 class LogicalDiskOperation(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
         super().__init__(mode="operation")
-        self._only_removable = True
-        self._create_watcher()
+        self._only_removable = only_removable
+        kwords={}
+        if self._only_removable:
+            kwords.update({"DriveType":"2"})
+        self._create_watcher(**kwords)
         
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''Drive Operation
