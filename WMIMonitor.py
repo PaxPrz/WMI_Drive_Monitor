@@ -5,6 +5,7 @@ from contextlib import suppress
 from threading import Thread
 import sys
 import time
+import pythoncom
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
         
@@ -122,6 +123,7 @@ class Drive:
 class LogicalDiskWatcher(Thread):
     def __init__(self, mode: str, timeout_in_ms=1000)-> "LogicalDiskWatcher":
         Thread.__init__(self)
+        self._my_c = wmi.WMI()
         self._mode = mode
         self._destruct = False
         self._timeout = timeout_in_ms
@@ -130,7 +132,7 @@ class LogicalDiskWatcher(Thread):
         logging.info(f"Created {self._mode}")
         
     def _create_watcher(self):
-        self.disk_watcher = wmi_consumer.Win32_LogicalDisk.watch_for(self._mode)
+        self.disk_watcher = self._my_c.Win32_LogicalDisk.watch_for(self._mode)
         
     def start_watching(self):
         while True:
@@ -166,14 +168,17 @@ class LogicalDiskWatcher(Thread):
     
     def run(self):
         logging.info(f'''Starting {self.__class__.__name__}''')
+        #pythoncom.CoInitialize()
+        self._create_watcher()
         self.start_watching()
+        #pythoncom.CoUninitialize()
         
     
 class LogicalDiskCreation(LogicalDiskWatcher):
     def __init__(self, only_removable=True):
         super().__init__(mode="creation")
         self._only_removable = only_removable
-        self._create_watcher()
+        #self._create_watcher()
     
     def _show_notification(self, response: wmi._wmi_event):
         logging.info(f'''New Disk Inserted
