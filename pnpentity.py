@@ -80,7 +80,7 @@ class WPDModification(WPD):
     def __init__(self):
         super().__init__(mode="modification")
     
-    def _show_notification(self, reponse:wmi._wmi_event):
+    def _show_notification(self, response:wmi._wmi_event):
         logging.info(f'''Portable Device Modification
             Name: {response.Name}
             PnP Device ID: {response.PnPDeviceID}
@@ -107,7 +107,7 @@ class WPDOperation(WPD):
     def __init__(self):
         super().__init__(mode="operation")
     
-    def _show_notification(self, reponse:wmi._wmi_event):
+    def _show_notification(self, response:wmi._wmi_event):
         logging.info(f'''Portable Device Operation
             Name: {response.Name}
             PnP Device ID: {response.PnPDeviceID}
