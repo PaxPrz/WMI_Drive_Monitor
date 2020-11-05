@@ -11,6 +11,9 @@ except ImportError:
     from .utils.constants import TIMEOUT_CYCLE, DRIVE_TYPE
 
 class LogicalDiskWatcher:
+    '''
+        An abstract watcher class that watches for changes in Logical Disk using windows WMI
+    '''
     def __init__(self, mode: str, only_removable:bool=True, timeout_in_ms:int=TIMEOUT_CYCLE)-> "LogicalDiskWatcher":
         self._mode = mode
         self._destruct = False
@@ -23,10 +26,18 @@ class LogicalDiskWatcher:
         #logging.info(f"Created {self._mode}")
         
     def _create_watcher(self):
+        '''
+            Creates a watcher object and stores it as instance property
+        '''
         self._my_c = get_WMI_consumer()
         self.disk_watcher = self._my_c.Win32_LogicalDisk.watch_for(self._mode, **self._kword)
         
     def start_watching(self):
+        '''
+            A generator based coroutine that watch for event until timeout and yields control back to main program
+            If KeyboardInterrupt or other exception occurs, the module gets destroyed
+            Notification is only printed if drive_type is removable for only_removable=True            
+        '''
         self._create_watcher()
         while not self._destruct:
             try:
@@ -48,13 +59,25 @@ class LogicalDiskWatcher:
                 #yield
                 
     def destroy(self):
+        '''
+            Destroys the loop and stops watching for the specific element
+        '''
         self._destruct = True
     
     def _show_notification(self, response: wmi._wmi_event):
+        '''
+            Notification method to be defined by the inherited classes
+            
+            Args:
+                response (_wmi_event): A WMI event object
+        '''
         pass
         
     
 class LogicalDiskCreation(LogicalDiskWatcher):
+    '''
+        The instance of this class tracks for USB drive Insertion
+    '''
     def __init__(self, only_removable=True):
         super().__init__(mode="creation", only_removable=only_removable)
     
@@ -70,6 +93,9 @@ class LogicalDiskCreation(LogicalDiskWatcher):
         ''')
     
 class LogicalDiskModification(LogicalDiskWatcher):
+    '''
+        The instance of this class tracks file being copied to drive or deleted from it
+    '''
     def __init__(self, only_removable=True):
         super().__init__(mode="modification", only_removable=only_removable)
         
@@ -86,6 +112,9 @@ class LogicalDiskModification(LogicalDiskWatcher):
         ''')
         
 class LogicalDiskEjection(LogicalDiskWatcher):
+    '''
+        The instance of this class tracks drive being ejected
+    '''
     def __init__(self, only_removable=True):
         super().__init__(mode="deletion", only_removable=only_removable)
         
@@ -96,6 +125,9 @@ class LogicalDiskEjection(LogicalDiskWatcher):
         ''')
         
 class LogicalDiskOperation(LogicalDiskWatcher):
+    '''
+        The instance of this class track any operation performed on the drive
+    '''
     def __init__(self, only_removable=True):
         super().__init__(mode="operation", only_removable=only_removable)
         

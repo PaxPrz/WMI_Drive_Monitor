@@ -37,12 +37,12 @@ if __name__ == "__main__":
     workers = []
     if args.logical_drive:
         headers.append(LOGICAL)
-        logging.debug("Listening to Logical Drives")
+        logging.debug("Listening for Logical Drives")
     if args.portable_device:
         headers.append(PNP)
-        logging.debug("Listening to Portable Devices")
+        logging.debug("Listening for Portable Devices")
     if not headers:
-        logging.error("Must listen to atleast one of --logical-drive or --portable-device")
+        logging.error("Must listen to atleast one of '--logical-drive' or '--portable-device'")
         sys.exit(0)
     for h in headers:
         if args.options:

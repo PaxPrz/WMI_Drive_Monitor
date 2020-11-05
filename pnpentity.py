@@ -8,6 +8,9 @@ except ImportError:
     from .utils.constants import TIMEOUT_CYCLE
 
 class WPD:
+    '''
+        An abstract watcher class that watches for changes in Portable Device using windows WMI
+    '''
     def __init__(self, mode:str, timeout_ms:int =TIMEOUT_CYCLE):
         self._mode = mode
         self._destruct = False
@@ -15,10 +18,17 @@ class WPD:
         self._kword = {"PNPClass": "WPD"}
         
     def _create_watcher(self):
+        '''
+            Creates a watcher object and stores it as instance property
+        '''
         self._my_c = get_WMI_consumer()
         self.pnp_watcher = self._my_c.Win32_PnPEntity.watch_for(self._mode, **self._kword)
     
     def start_watching(self):
+        '''
+            A generator based coroutine that watch for event until timeout and yields control back to main program
+            If KeyboardInterrupt or other exception occurs, the module gets destroyed            
+        '''
         self._create_watcher()
         while not self._destruct:
             try:
@@ -34,12 +44,24 @@ class WPD:
                 self._show_notification(response)
     
     def destroy(self):
+        '''
+            Destroys the loop and stops watching for the specific element
+        '''
         self._destruct = True
         
     def _show_notification(self, response:wmi._wmi_event):
+        '''
+            Notification method to be defined by the inherited classes
+            
+            Args:
+                response (_wmi_event): A WMI event object
+        '''
         pass
     
 class WPDCreation(WPD):
+    '''
+        The instance of this class tracks for Portable Device Insertion
+    '''
     def __init__(self):
         super().__init__(mode="creation")
         
@@ -52,6 +74,9 @@ class WPDCreation(WPD):
         ''')
         
 class WPDModification(WPD):
+    '''
+        The instance of this class tracks for modification. Doesn't track file transfer or delete.
+    '''
     def __init__(self):
         super().__init__(mode="modification")
     
@@ -62,6 +87,9 @@ class WPDModification(WPD):
         ''')
         
 class WPDEjection(WPD):
+    '''
+        The instance of this class tracks for Portable Device Ejection
+    '''
     def __init__(self):
         super().__init__(mode="deletion")
     
@@ -73,6 +101,9 @@ class WPDEjection(WPD):
         ''')
         
 class WPDOperation(WPD):
+    '''
+        The instance of this class tracks for Portable Device operation
+    '''
     def __init__(self):
         super().__init__(mode="operation")
     
