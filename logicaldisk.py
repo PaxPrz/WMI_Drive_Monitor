@@ -1,5 +1,7 @@
 import logging
 import wmi
+from threading import Thread, current_thread, main_thread
+import pythoncom
 from contextlib import suppress
 try:
     from utils.helpers import convert_bytes
@@ -34,29 +36,34 @@ class LogicalDiskWatcher:
         
     def start_watching(self):
         '''
-            A generator based coroutine that watch for event until timeout and yields control back to main program
+            A method to run in thread, that watch for event until timeout and loops back again
             If KeyboardInterrupt or other exception occurs, the module gets destroyed
             Notification is only printed if drive_type is removable for only_removable=True            
         '''
-        self._create_watcher()
-        while not self._destruct:
-            try:
-                response = self.disk_watcher(timeout_ms=self._timeout)
-            except KeyboardInterrupt:
-                self.destroy()
-            except wmi.x_wmi_timed_out:
-                yield
-            except Exception as e:
-                logging.error(f"Exception coming from here\n {e}")
-                self.destroy()
-            else:
-                drive_type = -1
-                with suppress(AttributeError):
-                    drive_type = int(response.DriveType)
-                if self._only_removable and not drive_type == 2:
+        if not current_thread() is main_thread():
+            pythoncom.CoInitialize()
+        try:
+            self._create_watcher()
+            while not self._destruct:
+                try:
+                    response = self.disk_watcher(timeout_ms=self._timeout)
+                except KeyboardInterrupt:
+                    self.destroy()
+                except wmi.x_wmi_timed_out:
                     continue
-                self._show_notification(response)
-                #yield
+                except Exception as e:
+                    logging.error(f"Exception coming from here\n {e}")
+                    self.destroy()
+                else:
+                    drive_type = -1
+                    with suppress(AttributeError):
+                        drive_type = int(response.DriveType)
+                    if self._only_removable and not drive_type == 2:
+                        continue
+                    self._show_notification(response)
+        finally:
+            if not current_thread() is main_thread():
+                pythoncom.CoUninitialize()
                 
     def destroy(self):
         '''
@@ -143,12 +150,21 @@ if __name__=="__main__":
         Press 'q' to Quit!
     ''')
     workers = LogicalDiskCreation(), LogicalDiskEjection(), LogicalDiskModification()#, LogicalDiskOperation()
-    gens = [x.start_watching() for x in workers]
+    threads = []
+    for w in workers:
+        t = Thread(target=w.start_watching)
+        t.start()
+        threads.append(t)
     while True:
         try:
-            for w in gens:
-                next(w)
-        except (KeyboardInterrupt, StopIteration):
+            q = input("")
+        except KeyboardInterrupt:
+            q = 'q'
+        if q in ('q','Q'):
+            for w in workers:
+                w.destroy()
             break
+    for t in threads:
+        t.join()
     logging.debug('''Closing Watcher''')
     

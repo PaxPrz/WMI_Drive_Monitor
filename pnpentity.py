@@ -1,5 +1,7 @@
 import wmi
 import logging
+from threading import Thread, current_thread, main_thread
+import pythoncom
 try:
     from core.functions import get_WMI_consumer
     from utils.constants import TIMEOUT_CYCLE
@@ -26,22 +28,28 @@ class WPD:
     
     def start_watching(self):
         '''
-            A generator based coroutine that watch for event until timeout and yields control back to main program
+            A method to run in thread, that watch for event until timeout and loops again
             If KeyboardInterrupt or other exception occurs, the module gets destroyed            
-        '''
-        self._create_watcher()
-        while not self._destruct:
-            try:
-                response = self.pnp_watcher(timeout_ms=self._timeout_in_ms)
-            except KeyboardInterrupt:
-                self.destroy()
-            except wmi.x_wmi_timed_out:
-                yield
-            except Exception as e:
-                logging.error(f"Exception coming from here\n {e}")
-                self.destroy()
-            else:
-                self._show_notification(response)
+        '''        
+        if not current_thread() is main_thread():
+            pythoncom.CoInitialize()
+        try:
+            self._create_watcher()
+            while not self._destruct:
+                try:
+                    response = self.pnp_watcher(timeout_ms=self._timeout_in_ms)
+                except KeyboardInterrupt:
+                    self.destroy()
+                except wmi.x_wmi_timed_out:
+                    continue
+                except Exception as e:
+                    logging.error(f"Exception coming from here\n {e}")
+                    self.destroy()
+                else:
+                    self._show_notification(response)
+        finally:
+            if not current_thread() is main_thread():
+                pythoncom.CoUninitialize()
     
     def destroy(self):
         '''
@@ -80,7 +88,7 @@ class WPDModification(WPD):
     def __init__(self):
         super().__init__(mode="modification")
     
-    def _show_notification(self, reponse:wmi._wmi_event):
+    def _show_notification(self, response:wmi._wmi_event):
         logging.info(f'''Portable Device Modification
             Name: {response.Name}
             PnP Device ID: {response.PnPDeviceID}
@@ -107,7 +115,7 @@ class WPDOperation(WPD):
     def __init__(self):
         super().__init__(mode="operation")
     
-    def _show_notification(self, reponse:wmi._wmi_event):
+    def _show_notification(self, response:wmi._wmi_event):
         logging.info(f'''Portable Device Operation
             Name: {response.Name}
             PnP Device ID: {response.PnPDeviceID}
@@ -119,13 +127,22 @@ if __name__ == "__main__":
     logging.debug('''Starting up WPD watcher
         Press 'q' to Quit
     ''')
-    workers = WPDCreation(), WPDModification(), WPDEjection()
-    gens = [x.start_watching() for x in workers]
+    workers = WPDCreation(), WPDModification(), WPDEjection() #, WPDOperation()
+    threads = []
+    for w in workers:
+        t = Thread(target=w.start_watching)
+        t.start()
+        threads.append(t)
     while True:
         try:
-            for w in gens:
-                next(w)
-        except (KeyboardInterrupt, StopIteration):
+            q = input("")
+        except KeyboardInterrupt:
+            q = 'q'
+        if q in ('q','Q'):
+            for w in workers:
+                w.destroy()
             break
+    for t in threads:
+        t.join()
     logging.debug('''Stopping WPD watcher''')
     

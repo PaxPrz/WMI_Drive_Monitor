@@ -9,11 +9,12 @@ if __name__ == "__main__":
     import logging
     import argparse
     import sys
+    from threading import Thread
     
     CHOICES = ['create','modify','delete','operation']
     
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-    parser = argparse.ArgumentParser(description="Tracks USB Storage activity")
+    parser = argparse.ArgumentParser(description="Tracks USB Storage activity: Thread based implementation")
     parser.add_argument('-l', '--logical-drive', action="store_true", help="Keep track of Logical Removable Device")
     parser.add_argument('-p', '--portable-device', action="store_true", help="Keep track of Windows Portable Devices")
     parser.add_argument('-o', '--options', nargs='+', choices=CHOICES, help="Choose multiple notification to listen on. Defaults to all")
@@ -53,14 +54,23 @@ if __name__ == "__main__":
             logging.debug(f"Listening to all options: {CHOICES}")
             for o in CHOICES:
                 workers.append(h[o]())
-    gens = [x.start_watching() for x in workers]
     logging.debug("Starting Watcher\n")
+    threads = []
+    for w in workers:
+        t = Thread(target=w.start_watching)
+        t.start()
+        threads.append(t)
     while True:
         try:
-            for g in gens:
-                next(g)
-        except (KeyboardInterrupt, StopIteration):
+            q = input("")
+        except KeyboardInterrupt:
+            q = 'q'
+        if q in ('q','Q'):
+            for w in workers:
+                w.destroy()
             break
+    for t in threads:
+        t.join()
     logging.debug("Closing Watcher")
     
 
