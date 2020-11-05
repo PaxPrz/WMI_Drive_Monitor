@@ -1,17 +1,21 @@
 import wmi
 import logging
-
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+try:
+    from core.functions import get_WMI_consumer
+    from utils.constants import TIMEOUT_CYCLE
+except ImportError:
+    from .core.functions import get_WMI_consumer
+    from .utils.constants import TIMEOUT_CYCLE
 
 class WPD:
-    def __init__(self, mode:str, timeout_ms=100):
+    def __init__(self, mode:str, timeout_ms:int =TIMEOUT_CYCLE):
         self._mode = mode
         self._destruct = False
         self._timeout_in_ms = timeout_ms
         self._kword = {"PNPClass": "WPD"}
         
     def _create_watcher(self):
-        self._my_c = wmi.WMI()
+        self._my_c = get_WMI_consumer()
         self.pnp_watcher = self._my_c.Win32_PnPEntity.watch_for(self._mode, **self._kword)
     
     def start_watching(self):
@@ -53,6 +57,8 @@ class WPDModification(WPD):
     
     def _show_notification(self, reponse:wmi._wmi_event):
         logging.info(f'''Portable Device Modification
+            Name: {response.Name}
+            PnP Device ID: {response.PnPDeviceID}
         ''')
         
 class WPDEjection(WPD):
@@ -65,8 +71,20 @@ class WPDEjection(WPD):
             Name: {response.Name}
             PnP Device ID: {response.PnPDeviceID}
         ''')
+        
+class WPDOperation(WPD):
+    def __init__(self):
+        super().__init__(mode="operation")
+    
+    def _show_notification(self, reponse:wmi._wmi_event):
+        logging.info(f'''Portable Device Operation
+            Name: {response.Name}
+            PnP Device ID: {response.PnPDeviceID}
+        ''')
+
     
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.debug('''Starting up WPD watcher
         Press 'q' to Quit
     ''')
